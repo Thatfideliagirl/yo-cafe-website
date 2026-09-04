@@ -2,11 +2,13 @@
 <html lang="en">
 <head>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script>
 const _supabase = supabase.createClient(
   'https://orqlklodpcsodfhsbhcf.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ycWxrbG9kcGNzb2RmaHNiaGNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTExNDcsImV4cCI6MjA5OTMyNzE0N30.BxoZi5fVr5Y4_pDZLg4Q4rfDTaL6RsZS0h0OxirqPzs'
 );
+emailjs.init({ publicKey: 'qxkVipT3XeCAX2q2e' });
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1971,6 +1973,7 @@ async function placeOrder() {
   if (error) return;
 
   addNotif('admin', '📦', 'New order ' + ref + ' from ' + name + ', ₦' + total.toLocaleString());
+  sendOrderNotificationEmail(order);
 
   document.getElementById('oref').textContent = ref;
   cart = [];
@@ -2010,6 +2013,7 @@ async function waOrder() {
   if (error) { if (waWin) waWin.close(); return; }
 
   addNotif('admin', '📦', 'New order ' + ref + ' from ' + name + ', ₦' + total.toLocaleString());
+  sendOrderNotificationEmail(order);
 
   const waItems = cart.map(i => `${i.name} x${i.qty} = ₦${(i.price * i.qty).toLocaleString()}`).join('\n');
   const paymentLine = hasPaid
@@ -3748,6 +3752,25 @@ function closeNotif() {
 // ══════════════════════════════════════════════
 function getNotifsFor(key) { try { return JSON.parse(localStorage.getItem('yc_notifs_' + key) || '[]'); } catch(e) { return []; } }
 function setNotifsFor(key, v) { localStorage.setItem('yc_notifs_' + key, JSON.stringify(v)); }
+
+// Emails the admin whenever a new order comes in, via EmailJS (safe to call from the
+// browser — no backend needed). Never blocks or breaks order placement if it fails;
+// the in-app notification bell (addNotif) is the reliable path, this is a bonus.
+function sendOrderNotificationEmail(order) {
+  try {
+    emailjs.send('service_915ihla', 'template_8f05afn', {
+      order_id: order.id,
+      customer_name: order.customer_name,
+      customer_phone: order.phone,
+      customer_address: order.address,
+      order_items: order.items,
+      order_total: order.total,
+      order_notes: order.note || '—',
+    }).catch(e => console.error('Order notification email failed:', e));
+  } catch (e) {
+    console.error('Order notification email failed:', e);
+  }
+}
 
 function addNotif(key, icon, text) {
   const all = getNotifsFor(key);
