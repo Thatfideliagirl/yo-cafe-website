@@ -3759,6 +3759,7 @@ function setNotifsFor(key, v) { localStorage.setItem('yc_notifs_' + key, JSON.st
 function sendOrderNotificationEmail(order) {
   try {
     emailjs.send('service_915ihla', 'template_8f05afn', {
+      email: 'yofruitscafe@gmail.com',
       order_id: order.id,
       customer_name: order.customer_name,
       customer_phone: order.phone,
