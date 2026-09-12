@@ -1200,6 +1200,16 @@ tr:last-child td{border-bottom:none;}
     <div class="fg2"><label>Emoji Icon</label><input type="text" id="if-emoji" placeholder="🍧" maxlength="4"></div>
     <div class="fg2"><label>Short Description</label><textarea id="if-desc" rows="3" style="width:100%;padding:11px 13px;border:2px solid var(--bd);border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical"></textarea></div>
     <div class="fg2"><label>Health Benefits</label><textarea id="if-health" rows="3" style="width:100%;padding:11px 13px;border:2px solid var(--bd);border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical"></textarea></div>
+    <div class="fg2" style="background:var(--gp);border-radius:10px;padding:12px 14px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="if-onsale" onchange="document.getElementById('if-sale-wrap').style.display=this.checked?'block':'none'" style="width:16px;height:16px">
+        <span>🏷️ On Sale</span>
+      </label>
+      <div id="if-sale-wrap" style="display:none;margin-top:10px">
+        <label>Discount Percentage (%)</label>
+        <input type="number" id="if-sale-percent" placeholder="20" min="1" max="90">
+      </div>
+    </div>
     <div style="display:flex;gap:10px;margin-top:6px">
       <button class="btn" style="flex:1;padding:12px" onclick="saveItemForm()">Save Item</button>
       <button class="btn-o" style="flex:1;padding:10px" onclick="closeItemForm()">Cancel</button>
@@ -1394,12 +1404,15 @@ async function loadMenuFromSupabase() {
         if (row.health) item.health = row.health;
         if (row.img) IMG[item.id] = row.img;
         if (typeof row.sort_order === 'number') item.sort_order = row.sort_order;
+        item.onSale = !!row.on_sale;
+        item.salePercent = row.sale_percent || 0;
       } else {
         MENU.push({
           id: row.id, name: row.name, cat: row.cat, price: row.price,
           e: row.emoji || '🍧', active: row.active !== false,
           desc: row.description, health: row.health,
           sort_order: typeof row.sort_order === 'number' ? row.sort_order : undefined,
+          onSale: !!row.on_sale, salePercent: row.sale_percent || 0,
         });
         if (row.img) IMG[row.id] = row.img;
       }
@@ -1422,6 +1435,7 @@ async function persistMenuOrder() {
     id: item.id, name: item.name, cat: item.cat, price: item.price, emoji: item.e,
     description: item.desc, health: item.health, img: IMG[item.id] || null,
     active: item.active, sort_order: item.sort_order,
+    on_sale: !!item.onSale, sale_percent: item.salePercent || 0,
   }))));
   return results.every(r => !r.error);
 }
@@ -1669,19 +1683,37 @@ function renderMenu(filter = 'All') {
   setTimeout(observeNew, 50);
 }
 
+// Sale price, rounded to the nearest naira — the price actually charged
+// when an item is on sale, used consistently for display and for cart/checkout.
+function getEffectivePrice(item) {
+  if (item.onSale && item.salePercent > 0) {
+    return Math.round(item.price * (1 - item.salePercent / 100));
+  }
+  return item.price;
+}
+
 function cardHTML(item, idx) {
   const imgSrc = getItemImg(item.id);
   const imgEl = imgSrc
     ? `<img src="${imgSrc}" alt="${item.name}" style="width:100%;height:100%;object-fit:cover;">`
     : `<span style="font-size:52px">${item.e}</span>`;
   const delay = ((idx || 0) % 8) * 80;
-  return `<div class="mc${item.active ? '' : ' inactive'} card-in" style="transition-delay:${delay}ms" onclick="openIMO(${item.id})">
+  const onSale = item.onSale && item.salePercent > 0;
+  const salePrice = getEffectivePrice(item);
+  const priceHTML = onSale
+    ? `<span class="price" style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">
+         <span style="text-decoration:line-through;color:var(--gy);font-size:13px;font-weight:500">₦${item.price.toLocaleString()}</span>
+         <span>₦${salePrice.toLocaleString()}</span>
+       </span>`
+    : `<span class="price">₦${item.price.toLocaleString()}</span>`;
+  return `<div class="mc${item.active ? '' : ' inactive'} card-in" style="transition-delay:${delay}ms;position:relative" onclick="openIMO(${item.id})">
+    ${onSale ? `<span style="position:absolute;top:10px;left:10px;background:var(--rd);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:50px;z-index:2">🏷️ ${item.salePercent}% OFF</span>` : ''}
     <div class="mimg" style="overflow:hidden">${imgEl}</div>
     <div class="minfo">
       <h3>${item.name}</h3>
       <p>${item.desc.substring(0, 65)}...</p>
       <div class="mfoot">
-        <span class="price">₦${item.price.toLocaleString()}</span>
+        ${priceHTML}
         ${item.active
           ? `<button class="abtn" onclick="event.stopPropagation();addCart(${item.id})">+</button>`
           : `<span class="ubadge">Unavailable</span>`}
@@ -1751,7 +1783,10 @@ function openIMO(id) {
   document.getElementById('imoc').textContent = item.cat;
   document.getElementById('imod').textContent = item.desc;
   document.getElementById('imoh').textContent = item.health;
-  document.getElementById('imop').textContent = '₦' + item.price.toLocaleString();
+  const onSale = item.onSale && item.salePercent > 0;
+  document.getElementById('imop').innerHTML = onSale
+    ? `<span style="text-decoration:line-through;color:var(--gy);font-size:15px;font-weight:500;margin-right:8px">₦${item.price.toLocaleString()}</span>₦${getEffectivePrice(item).toLocaleString()} <span style="background:var(--rd);color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:50px;margin-left:6px;vertical-align:middle">${item.salePercent}% OFF</span>`
+    : '₦' + item.price.toLocaleString();
   const ab = document.getElementById('imoab');
   if (item.active) {
     ab.style.display = 'block';
@@ -1771,7 +1806,7 @@ function addCart(id) {
   const item = MENU.find(i => i.id === id);
   const ex = cart.find(c => c.id === id);
   if (ex) ex.qty++;
-  else cart.push({ ...item, qty: 1 });
+  else cart.push({ ...item, price: getEffectivePrice(item), qty: 1 });
   renderCart();
   bounceCart();
   toast(`${item.e} ${item.name} added!`, 'ok');
@@ -2556,9 +2591,9 @@ function renderMenuMgmt() {
       ondragstart="mmDragStart(event,${item.id})" ondragover="mmDragOver(event)"
       ondrop="mmDrop(event,${item.id})" ondragend="mmDragEnd(event)">
     <td style="cursor:grab;color:var(--gy);font-size:16px;user-select:none" title="Drag to reorder">☰</td>
-    <td style="display:flex;align-items:center;gap:9px">${item.e} ${item.name}</td>
+    <td style="display:flex;align-items:center;gap:9px">${item.e} ${item.name}${item.onSale ? ` <span class="badge" style="background:var(--rd);color:#fff">🏷️ ${item.salePercent}% OFF</span>` : ''}</td>
     <td>${item.cat}</td>
-    <td>₦${item.price.toLocaleString()}</td>
+    <td>${item.onSale ? `<span style="text-decoration:line-through;color:var(--gy);font-size:12px">₦${item.price.toLocaleString()}</span> ₦${getEffectivePrice(item).toLocaleString()}` : '₦' + item.price.toLocaleString()}</td>
     <td><span class="badge ${item.active ? 'ba' : 'bi'}" id="ms-${item.id}">${item.active ? 'Active' : 'Inactive'}</span></td>
     <td><button class="tggle ${item.active ? 'on' : 'off'}" id="mt-${item.id}" onclick="toggleItem(${item.id})">${item.active ? 'Set Inactive' : 'Set Active'}</button></td>
     <td><button class="ebtn" onclick="openItemForm(${item.id})">Edit ✏️</button></td>
@@ -3146,6 +3181,9 @@ function openItemForm(id) {
     document.getElementById('if-emoji').value = item.e;
     document.getElementById('if-desc').value = item.desc;
     document.getElementById('if-health').value = item.health;
+    document.getElementById('if-onsale').checked = !!item.onSale;
+    document.getElementById('if-sale-percent').value = item.salePercent || '';
+    document.getElementById('if-sale-wrap').style.display = item.onSale ? 'block' : 'none';
     const img = getItemImg(item.id);
     prev.innerHTML = img ? `<img src="${img}">` : item.e;
   } else {
@@ -3156,6 +3194,9 @@ function openItemForm(id) {
     document.getElementById('if-emoji').value = '';
     document.getElementById('if-desc').value = '';
     document.getElementById('if-health').value = '';
+    document.getElementById('if-onsale').checked = false;
+    document.getElementById('if-sale-percent').value = '';
+    document.getElementById('if-sale-wrap').style.display = 'none';
     prev.innerHTML = '🍧';
   }
   document.getElementById('item-modal').classList.add('open');
@@ -3199,7 +3240,10 @@ async function saveItemForm() {
   const emoji = document.getElementById('if-emoji').value.trim() || '🍧';
   const desc = document.getElementById('if-desc').value.trim();
   const health = document.getElementById('if-health').value.trim();
+  const onSale = document.getElementById('if-onsale').checked;
+  const salePercent = onSale ? parseInt(document.getElementById('if-sale-percent').value, 10) : 0;
   if (!name || !cat || !price || !desc || !health) { toast('Please fill in all fields', 'err'); return; }
+  if (onSale && (!salePercent || salePercent < 1 || salePercent > 90)) { toast('Please enter a discount percentage between 1 and 90', 'err'); return; }
 
   if (_editingItemId) {
     const item = MENU.find(i => i.id === _editingItemId);
@@ -3207,10 +3251,12 @@ async function saveItemForm() {
     const ok = await saveMenuItemRow({
       id: _editingItemId, name, cat, price, emoji, description: desc, health, img,
       active: item ? item.active : true,
+      on_sale: onSale, sale_percent: salePercent,
     });
     if (!ok) return;
     if (item) {
       item.name = name; item.cat = cat; item.price = price; item.e = emoji; item.desc = desc; item.health = health;
+      item.onSale = onSale; item.salePercent = salePercent;
       if (_pendingItemImg) IMG[item.id] = _pendingItemImg;
     }
     saveAnnouncement(name);
@@ -3219,10 +3265,11 @@ async function saveItemForm() {
     const id = nextMenuId();
     const ok = await saveMenuItemRow({
       id, name, cat, price, emoji, description: desc, health, img: _pendingItemImg || null, active: true,
+      on_sale: onSale, sale_percent: salePercent,
       created_at: new Date().toISOString(),
     });
     if (!ok) return;
-    const item = { id, name, cat, price, e: emoji, active: true, desc, health };
+    const item = { id, name, cat, price, e: emoji, active: true, desc, health, onSale, salePercent };
     MENU.push(item);
     if (_pendingItemImg) IMG[id] = _pendingItemImg;
     saveAnnouncement(name);
