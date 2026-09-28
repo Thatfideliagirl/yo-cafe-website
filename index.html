@@ -256,6 +256,8 @@ tr:last-child td{border-bottom:none;}
 .bdn{background:#f3f4f6;color:#374151;}
 .ba{background:#f0fdf4;color:#15803d;}
 .bi{background:#fee2e2;color:#b91c1c;}
+.bwa{background:#dcfce7;color:#166534;}
+.bweb{background:#eef2ff;color:#4338ca;}
 .panel{display:none;}
 .panel.on{display:block;}
 .ebtn{background:var(--gp);color:var(--g);border:1px solid var(--bd);padding:6px 14px;border-radius:50px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:background .2s,transform .2s;}
@@ -1020,7 +1022,7 @@ tr:last-child td{border-bottom:none;}
         </div>
         <div class="tw">
           <div class="th"><h3>Recent Orders</h3><button class="ebtn" onclick="exportOrders()">⬇ Export CSV</button></div>
-          <table><thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Details & Receipt</th><th>Status</th><th>Update</th></tr></thead>
+          <table><thead><tr><th>Order ID</th><th>Customer</th><th>Source</th><th>Items</th><th>Total</th><th>Details & Receipt</th><th>Status</th><th>Update</th></tr></thead>
           <tbody id="a-orders-body"></tbody></table>
         </div>
       </div>
@@ -1029,7 +1031,7 @@ tr:last-child td{border-bottom:none;}
         <div class="dh"><h2>All Orders 📦</h2></div>
         <div class="tw">
           <div class="th"><h3>Orders</h3><button class="ebtn" onclick="exportOrders()">⬇ Export CSV</button></div>
-          <table><thead><tr><th>ID</th><th>Customer</th><th>Phone</th><th>Items</th><th>Total</th><th>Details & Receipt</th><th>Status</th><th>Update</th></tr></thead>
+          <table><thead><tr><th>ID</th><th>Customer</th><th>Source</th><th>Phone</th><th>Items</th><th>Total</th><th>Details & Receipt</th><th>Status</th><th>Update</th></tr></thead>
           <tbody id="a-all-orders-body"></tbody></table>
         </div>
       </div>
@@ -1915,7 +1917,7 @@ function selPay(m) {
     bd.style.display = 'block';
     if (placeBtn) placeBtn.style.display = 'none';
     if (waBtn) waBtn.style.display = 'flex';
-    if (hint) hint.textContent = 'Optional — upload your receipt now if you\'ve already paid, or skip it and arrange payment with us directly on WhatsApp.';
+    if (hint) hint.textContent = 'Payment must be made and the receipt uploaded before your order can be placed.';
   }
 }
 
@@ -1977,12 +1979,10 @@ function validateCheckout() {
     return false;
   }
   if (cart.length === 0) { toast('Your cart is empty!', 'err'); return false; }
-  // Receipt is mandatory for Bank Transfer (paying on the site) but optional for
-  // WhatsApp orders — those can be confirmed and paid for directly with admin instead.
-  if (_selectedPayMethod === 'bank') {
-    const hasReceipt = document.getElementById('rfile').files.length > 0;
-    if (!hasReceipt) { toast('Please upload your payment receipt before placing your order', 'err'); return false; }
-  }
+  // Receipt is mandatory for both Bank Transfer and WhatsApp Order — payment
+  // must be made and proof uploaded before any order can be placed.
+  const hasReceipt = document.getElementById('rfile').files.length > 0;
+  if (!hasReceipt) { toast('Please upload your payment receipt before placing your order', 'err'); return false; }
   return true;
 }
 
@@ -2445,9 +2445,12 @@ let _ordersPeriod = 'today';
 let _ordersPeriodDate = null;
 
 const receiptCell = (o) => `<button class="ebtn" onclick="viewReceipt('${o.id}')">📋 Details</button>${o.receipt ? '' : ' <span class="badge bi">⚠️ Not Paid Yet</span>'}`;
+const sourceCell = (o) => (o.note || '').includes('Ordered via WhatsApp')
+  ? `<span class="badge bwa">💬 WhatsApp</span>`
+  : `<span class="badge bweb">🌐 Website</span>`;
 
 const shortRow = (o) => `<tr>
-    <td>${o.id}</td><td>${o.customer_name}</td><td>${o.items}</td><td>${o.total}</td>
+    <td>${o.id}</td><td>${o.customer_name}</td><td>${sourceCell(o)}</td><td>${o.items}</td><td>${o.total}</td>
     <td>${receiptCell(o)}</td>
     <td><span class="badge ${statusClass(o.status)}">${capitalize(o.status)}</span></td>
     <td><select class="ssel" onchange="updateStatus('${o.id}',this.value)">
@@ -2458,7 +2461,7 @@ const shortRow = (o) => `<tr>
     </select></td></tr>`;
 
 const fullRow = (o) => `<tr>
-    <td>${o.id}</td><td>${o.customer_name}</td><td>${o.phone || '—'}</td><td>${o.items}</td><td>${o.total}</td>
+    <td>${o.id}</td><td>${o.customer_name}</td><td>${sourceCell(o)}</td><td>${o.phone || '—'}</td><td>${o.items}</td><td>${o.total}</td>
     <td>${receiptCell(o)}</td>
     <td><span class="badge ${statusClass(o.status)}">${capitalize(o.status)}</span></td>
     <td><select class="ssel" onchange="updateStatus('${o.id}',this.value)">
@@ -3636,8 +3639,8 @@ function updateRevDisplayForDate(dateStr) {
 function exportOrders() {
   const rows = _adminOrdersCache;
   if (rows.length === 0) { toast('No orders to export', 'err'); return; }
-  const csv = ['ID,Customer,Phone,Items,Total,Status,Date', ...rows.map(o =>
-    `${o.id},${o.customer_name},${o.phone || ''},${o.items},${o.total},${o.status},${fmtDate(o.created_at)}`)].join('\n');
+  const csv = ['ID,Customer,Source,Phone,Items,Total,Status,Date', ...rows.map(o =>
+    `${o.id},${o.customer_name},${(o.note || '').includes('Ordered via WhatsApp') ? 'WhatsApp' : 'Website'},${o.phone || ''},${o.items},${o.total},${o.status},${fmtDate(o.created_at)}`)].join('\n');
   dlCSV(csv, 'yo-fruits-cafe-orders.csv');
 }
 
