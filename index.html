@@ -2570,7 +2570,7 @@ async function refreshCustOrders() {
         <td>${o.id}</td><td>${o.items}</td><td>${o.total}</td>
         <td><span class="badge ${statusClass(o.status)}">${capitalize(o.status)}</span></td>
         <td>${fmtDate(o.created_at)}</td>
-        <td><button class="ebtn" onclick="viewReceipt('${o.id}')">📋 Details</button>${o.receipt ? '' : ' <span class="badge bi">⚠️ Not Paid Yet</span>'}</td>
+        <td><div style="display:flex;flex-direction:column;align-items:flex-start;gap:6px"><button class="ebtn" onclick="viewReceipt('${o.id}')">📋 Details</button>${o.receipt ? '' : '<span class="badge bi" style="white-space:nowrap">⚠️ Not Paid Yet</span>'}</div></td>
         <td><button class="ebtn" onclick="messageAboutOrder('${o.id}')">💬 Message Us</button></td>
       </tr>`).join('');
 
@@ -2618,7 +2618,7 @@ let _adminOrdersCache = [];
 let _ordersPeriod = 'today';
 let _ordersPeriodDate = null;
 
-const receiptCell = (o) => `<button class="ebtn" onclick="viewReceipt('${o.id}')">📋 Details</button>${o.receipt ? '' : ' <span class="badge bi">⚠️ Not Paid Yet</span>'}`;
+const receiptCell = (o) => `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:6px"><button class="ebtn" onclick="viewReceipt('${o.id}')">📋 Details</button>${o.receipt ? '' : '<span class="badge bi" style="white-space:nowrap">⚠️ Not Paid Yet</span>'}</div>`;
 const sourceCell = (o) => (o.note || '').includes('Ordered via WhatsApp')
   ? `<span class="badge bwa">💬 WhatsApp</span>`
   : `<span class="badge bweb">🌐 Website</span>`;
@@ -3648,6 +3648,11 @@ async function submitInquiry() {
 }
 
 let _adminInquiriesCache = [];
+let _expandedInq = new Set();
+function toggleInquiryCard(id) {
+  if (_expandedInq.has(id)) _expandedInq.delete(id); else _expandedInq.add(id);
+  renderInquiries();
+}
 async function renderInquiries() {
   const el = document.getElementById('a-inq-list');
   if (!el) return;
@@ -3659,26 +3664,33 @@ async function renderInquiries() {
     el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--gy)">No inquiries yet</div>';
     return;
   }
-  el.innerHTML = all.map(i => `
-    <div style="background:var(--cr);border:1px solid var(--bd);border-radius:12px;padding:16px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+  el.innerHTML = all.map(i => {
+    const isOpen = _expandedInq.has(i.id);
+    return `
+    <div style="background:var(--cr);border:1px solid var(--bd);border-radius:12px;overflow:hidden">
+      <div onclick="toggleInquiryCard('${i.id}')" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;padding:16px;cursor:pointer">
         <div>
           <div style="font-weight:700;font-size:14px">${i.name} <span style="font-weight:400;color:var(--gy);font-size:13px">${i.org && i.org !== '—' ? '· ' + i.org : ''}</span></div>
           <div style="font-size:12px;color:var(--gy);margin-top:2px">${i.type} · ${i.phone} · ${fmtDate(i.created_at)}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="badge ${i.status === 'confirmed' ? 'bc' : 'bp'}">${capitalize(i.status)}</span>
-          <button class="ebtn" onclick="toggleInquiryStatus('${i.id}','${i.status}')">${i.status === 'confirmed' ? 'Set Pending' : '✅ Confirm'}</button>
+          <span style="font-size:13px;color:var(--gy);font-weight:600">${isOpen ? '▲ Hide' : '▼ View details'}</span>
         </div>
       </div>
-      ${i.note && i.note !== '—' ? `<div style="font-size:14px;line-height:1.6;margin-bottom:12px;padding:10px;background:var(--crd);border-radius:8px;border:1px solid var(--bd)">${i.note}</div>` : ''}
-      ${i.admin_reply ? `<div style="font-size:13px;background:var(--gp);border-radius:8px;padding:10px;margin-bottom:10px;border-left:3px solid var(--g)"><strong>Your reply:</strong> ${i.admin_reply}</div>` : ''}
-      ${i.user_email ? `
-      <div style="display:flex;gap:8px">
-        <input type="text" id="inq-reply-${i.id}" placeholder="Type a reply to send to them..." style="flex:1;padding:9px 12px;border:2px solid var(--bd);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;outline:none" value="${i.admin_reply || ''}">
-        <button class="btn" style="padding:9px 14px;font-size:13px" onclick="sendInquiryReply('${i.id}','${i.user_email}')">Send</button>
-      </div>` : `<p style="font-size:12px;color:var(--gy)">No account on file — reach them directly on ${i.phone}.</p>`}
-    </div>`).join('');
+      ${isOpen ? `
+      <div style="padding:0 16px 16px;border-top:1px solid var(--bd);margin-top:-1px;padding-top:14px">
+        <div style="margin-bottom:12px"><button class="ebtn" onclick="event.stopPropagation();toggleInquiryStatus('${i.id}','${i.status}')">${i.status === 'confirmed' ? 'Set Pending' : '✅ Confirm'}</button></div>
+        ${i.note && i.note !== '—' ? `<div style="font-size:14px;line-height:1.6;margin-bottom:12px;padding:10px;background:var(--crd);border-radius:8px;border:1px solid var(--bd)">${i.note}</div>` : `<p style="font-size:13px;color:var(--gy);margin-bottom:12px">No extra details were filled in.</p>`}
+        ${i.admin_reply ? `<div style="font-size:13px;background:var(--gp);border-radius:8px;padding:10px;margin-bottom:10px;border-left:3px solid var(--g)"><strong>Your reply:</strong> ${i.admin_reply}</div>` : ''}
+        ${i.user_email ? `
+        <div style="display:flex;gap:8px" onclick="event.stopPropagation()">
+          <input type="text" id="inq-reply-${i.id}" placeholder="Type a reply to send to them..." style="flex:1;padding:9px 12px;border:2px solid var(--bd);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;outline:none" value="${i.admin_reply || ''}">
+          <button class="btn" style="padding:9px 14px;font-size:13px" onclick="sendInquiryReply('${i.id}','${i.user_email}')">Send</button>
+        </div>` : `<p style="font-size:12px;color:var(--gy)">No account on file — reach them directly on ${i.phone}.</p>`}
+      </div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 async function toggleInquiryStatus(id, currentStatus) {
@@ -3933,8 +3945,8 @@ function showUserNotifications() {
     inq: _custInquiriesCache.filter(i => i.status === 'confirmed').map(i => i.id),
   }));
 
-  if (items.length === 0) return;
   const list = document.getElementById('notif-list');
+  if (items.length === 0) { list.innerHTML = ''; return; }
   list.innerHTML = items.map(n => `
     <div style="display:flex;align-items:center;gap:12px;background:var(--gp);border-radius:10px;padding:12px 14px">
       <span style="font-size:24px">${n.icon}</span>
@@ -3959,8 +3971,8 @@ function showAdminNotifications() {
   if (newInqs.length)    items.push({ icon: '📬', text: `${newInqs.length} new event inquiry${newInqs.length > 1 ? 's' : ''}` });
   if (newUsers.length)   items.push({ icon: '👤', text: `${newUsers.length} new customer registration${newUsers.length > 1 ? 's' : ''}` });
   S.setLastSeen();
-  if (items.length === 0) return;
   const list = document.getElementById('notif-list');
+  if (items.length === 0) { list.innerHTML = ''; return; }
   list.innerHTML = items.map(n => `
     <div style="display:flex;align-items:center;gap:12px;background:var(--gp);border-radius:10px;padding:12px 14px">
       <span style="font-size:24px">${n.icon}</span>
