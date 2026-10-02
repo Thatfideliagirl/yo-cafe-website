@@ -1647,6 +1647,11 @@ function go(page) {
   const pg = document.getElementById('page-' + page);
   if (pg) { pg.classList.add('active'); window.scrollTo(0, 0); }
   closeMenu();
+  // The help bubble's fixed bottom-right position overlaps the delivery
+  // address helpers on checkout (and doesn't apply once admin is logged in,
+  // handled separately in updateNav) -- hide it there.
+  const fab = document.getElementById('help-fab');
+  if (fab && !isAdmin) fab.classList.toggle('hidden', page === 'checkout');
 }
 
 function scrollToSec(id) {
@@ -2400,6 +2405,7 @@ function doLogout() {
   cart = [];
   renderCart();
   document.getElementById('dbtn').classList.add('hidden');
+  document.getElementById('help-fab').classList.remove('hidden');
   document.getElementById('ndrop-auth').style.display = 'flex';
   closeAnnouncement();
   closeDailyTip();
@@ -2419,6 +2425,11 @@ async function forgotPw() {
 function updateNav() {
   const btn = document.getElementById('dbtn');
   btn.classList.remove('hidden');
+  // The help bubble offers customer actions (track order, complain, WhatsApp
+  // us) that don't apply to the admin dashboard, and its fixed bottom-right
+  // position overlaps action buttons on some admin panels (e.g. inquiries).
+  const fab = document.getElementById('help-fab');
+  if (fab) fab.classList.toggle('hidden', isAdmin);
   document.getElementById('dbtn-icon').textContent = isAdmin ? '👑' : '👤';
   document.getElementById('dbtn-label').textContent = isAdmin ? 'Admin' : 'Dashboard';
   btn.onclick = () => go(isAdmin ? 'admin' : 'dashboard');
