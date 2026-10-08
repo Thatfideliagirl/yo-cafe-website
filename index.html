@@ -269,6 +269,8 @@ tr:last-child td{border-bottom:none;}
 .panel{display:none;}
 .panel.on{display:block;}
 .ebtn{background:var(--gp);color:var(--g);border:1px solid var(--bd);padding:6px 14px;border-radius:50px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:background .2s,transform .2s;}
+.sel-col{display:none;width:34px;text-align:center;}
+#orders-tw.selecting .sel-col{display:table-cell;}
 .ebtn:hover{background:var(--g);color:#fff;transform:translateY(-1px);}
 .ssel{border:1px solid var(--bd);border-radius:6px;padding:4px 7px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;background:var(--crd);}
 
@@ -1040,9 +1042,16 @@ tr:last-child td{border-bottom:none;}
 
       <div class="panel" id="ap-orders">
         <div class="dh"><h2>All Orders 📦</h2></div>
-        <div class="tw">
-          <div class="th"><h3>Orders</h3><button class="ebtn" onclick="exportOrders()">⬇ Export CSV</button></div>
-          <table><thead><tr><th>ID</th><th>Customer</th><th>Source</th><th>Phone</th><th>Items</th><th>Total</th><th>Details & Receipt</th><th>Status</th><th>Update</th></tr></thead>
+        <div class="tw" id="orders-tw">
+          <div class="th">
+            <h3>Orders</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span id="order-del-btn" style="display:none"><button class="ebtn" style="background:#fee2e2;color:#b91c1c;border-color:#fca5a5" onclick="deleteSelectedOrders()">🗑️ Delete Selected (<span id="order-sel-count">0</span>)</button></span>
+              <button class="ebtn" id="order-select-toggle-btn" onclick="toggleOrderSelectMode()">☑️ Select</button>
+              <button class="ebtn" onclick="exportOrders()">⬇ Export CSV</button>
+            </div>
+          </div>
+          <table><thead><tr><th class="sel-col"><input type="checkbox" id="order-select-all" onchange="toggleSelectAllOrders(this.checked)"></th><th>ID</th><th>Customer</th><th>Source</th><th>Phone</th><th>Items</th><th>Total</th><th>Details & Receipt</th><th>Status</th><th>Update</th></tr></thead>
           <tbody id="a-all-orders-body"></tbody></table>
         </div>
       </div>
@@ -2677,6 +2686,7 @@ const shortRow = (o) => `<tr>
     </select></td></tr>`;
 
 const fullRow = (o) => `<tr>
+    <td class="sel-col"><input type="checkbox" class="order-sel-cb" value="${o.id}" onchange="onOrderSelectChange()"></td>
     <td>${o.id}</td><td>${o.customer_name}</td><td>${sourceCell(o)}</td><td>${o.phone || '—'}</td><td>${o.items}</td><td>${o.total}</td>
     <td>${receiptCell(o)}</td>
     <td><span class="badge ${statusClass(o.status)}">${capitalize(o.status)}</span></td>
@@ -2735,8 +2745,47 @@ async function renderAdminOrders() {
   updateRevDisplay(_ordersPeriod === 'calendar' ? 'today' : _ordersPeriod);
   renderRecentOrdersTable();
 
-  const empty = '<tr><td colspan="8" style="text-align:center;color:var(--gy);padding:20px">No orders yet</td></tr>';
+  const empty = '<tr><td colspan="9" style="text-align:center;color:var(--gy);padding:20px">No orders yet</td></tr>';
   if (b2) b2.innerHTML = all.length > 0 ? all.map(fullRow).join('') : empty;
+  if (_orderSelectMode) onOrderSelectChange();
+}
+
+// ══════════════════════════════════════════════
+// ORDERS -- SELECT MODE (bulk cleanup of old/test orders)
+// ══════════════════════════════════════════════
+let _orderSelectMode = false;
+
+function toggleOrderSelectMode() {
+  _orderSelectMode = !_orderSelectMode;
+  document.getElementById('orders-tw').classList.toggle('selecting', _orderSelectMode);
+  document.getElementById('order-select-toggle-btn').textContent = _orderSelectMode ? '✕ Cancel' : '☑️ Select';
+  if (!_orderSelectMode) {
+    document.getElementById('order-select-all').checked = false;
+    document.getElementById('order-del-btn').style.display = 'none';
+  }
+}
+
+function toggleSelectAllOrders(checked) {
+  document.querySelectorAll('.order-sel-cb').forEach(cb => { cb.checked = checked; });
+  onOrderSelectChange();
+}
+
+function onOrderSelectChange() {
+  const count = document.querySelectorAll('.order-sel-cb:checked').length;
+  document.getElementById('order-sel-count').textContent = count;
+  document.getElementById('order-del-btn').style.display = count > 0 ? 'inline-block' : 'none';
+}
+
+async function deleteSelectedOrders() {
+  const ids = [...document.querySelectorAll('.order-sel-cb:checked')].map(cb => cb.value);
+  if (ids.length === 0) return;
+  if (!confirm(`Delete ${ids.length} order${ids.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
+  const results = await Promise.all(ids.map(id => sbCall(_supabase.from('orders').delete().eq('id', id))));
+  const failed = results.filter(r => r.error).length;
+  toggleOrderSelectMode();
+  renderAdminOrders();
+  if (failed > 0) toast(`${failed} order${failed > 1 ? 's' : ''} failed to delete`, 'err');
+  else toast(`${ids.length} order${ids.length > 1 ? 's' : ''} deleted 🗑️`, 'ok');
 }
 
 async function updateStatus(id, val) {
