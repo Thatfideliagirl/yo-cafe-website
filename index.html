@@ -764,9 +764,11 @@ tr:last-child td{border-bottom:none;}
         <div id="co-pickup-fields" style="display:none">
           <div class="fg2">
             <label>Pickup Location *</label>
-            <select id="co-pickup-loc" onchange="selectPickupLocation()"></select>
+            <select id="co-pickup-loc" onchange="selectPickupLocation()">
+              <option value="">— Select a pickup area —</option>
+            </select>
           </div>
-          <div style="background:var(--gp);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:13px;display:flex;gap:12px;align-items:flex-start">
+          <div id="pickup-addr-card" style="background:var(--gp);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:13px;display:none;gap:12px;align-items:flex-start">
             <span style="font-size:20px">📍</span>
             <div>
               <p style="font-weight:600;font-size:14px;margin-bottom:3px" id="pickup-addr-name"></p>
@@ -775,7 +777,7 @@ tr:last-child td{border-bottom:none;}
           </div>
           <div id="pickup-instructions-box" style="background:var(--cr);border:1px dashed var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:13px;display:none">
             <p style="font-weight:600;font-size:13px;margin-bottom:6px">ℹ️ Pickup Instructions</p>
-            <p style="font-size:13px;color:var(--gy);line-height:1.6" id="pickup-instructions-text"></p>
+            <ul id="pickup-instructions-list" style="font-size:13px;color:var(--gy);line-height:1.7;padding-left:18px;margin:0"></ul>
           </div>
         </div>
 
@@ -1216,10 +1218,13 @@ tr:last-child td{border-bottom:none;}
           <button class="btn" onclick="addPickupLocation()">Add Pickup Location</button>
           <div id="admin-pickup-list" style="display:flex;flex-direction:column;gap:8px;margin-top:16px"></div>
           <div class="fg2" style="margin-top:18px">
-            <label>Pickup Instructions</label>
-            <textarea id="set-pickup-instructions" rows="3" placeholder="e.g. Your order will be ready within 1–2 hours of confirmation. Please bring your order reference when you arrive." style="width:100%;padding:11px 13px;border:2px solid var(--bd);border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical"></textarea>
+            <label>Pickup Instructions (shown to customers as a list)</label>
+            <div style="display:flex;gap:10px">
+              <input type="text" id="pickup-new-instruction" placeholder="e.g. Please bring your order reference" style="flex:1">
+              <button class="btn" style="flex-shrink:0;padding:11px 18px" onclick="addPickupInstruction()">Add</button>
+            </div>
           </div>
-          <button class="btn" onclick="savePickupInstructions()">Save Pickup Instructions</button>
+          <div id="admin-pickup-instructions-list" style="display:flex;flex-direction:column;gap:8px;margin-top:10px"></div>
         </div>
         <div class="epsec" style="max-width:520px">
           <h3>Change Admin Password</h3>
@@ -1985,13 +1990,14 @@ function renderCoSummary() {
   const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
 
   if (_fulfilMethod === 'pickup') {
+    const pending = !_selectedPickup;
     const total = subtotal;
     document.getElementById('co-items').innerHTML = cart.map(i =>
       `<div class="si"><span>${i.e} ${i.name} x${i.qty}</span><span>₦${(i.price * i.qty).toLocaleString()}</span></div>`
     ).join('');
     document.getElementById('co-subtotal').textContent = '₦' + subtotal.toLocaleString();
-    document.getElementById('co-deliveryfee').textContent = 'Pickup';
-    document.getElementById('co-total').textContent = '₦' + total.toLocaleString();
+    document.getElementById('co-deliveryfee').textContent = pending ? 'Select pickup area' : 'Pickup';
+    document.getElementById('co-total').textContent = pending ? '—' : '₦' + total.toLocaleString();
     return;
   }
 
@@ -2056,13 +2062,17 @@ async function populatePickupLocations() {
     return;
   }
   fulfilWrap.style.display = 'block';
-  sel.innerHTML = locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
-  _selectedPickup = locations[0];
+  sel.innerHTML = '<option value="">— Select a pickup area —</option>' +
+    locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+  sel.value = '';
+  _selectedPickup = null;
   updatePickupAddressCard();
+
   const s = await getSettings();
   const box = document.getElementById('pickup-instructions-box');
-  if (s.pickupInstructions) {
-    document.getElementById('pickup-instructions-text').textContent = s.pickupInstructions;
+  const list = document.getElementById('pickup-instructions-list');
+  if (s.pickupInstructions && s.pickupInstructions.length > 0) {
+    list.innerHTML = s.pickupInstructions.map(line => `<li>${line}</li>`).join('');
     box.style.display = 'block';
   } else {
     box.style.display = 'none';
@@ -2073,11 +2083,15 @@ function selectPickupLocation() {
   const sel = document.getElementById('co-pickup-loc');
   _selectedPickup = _pickupLocations.find(l => String(l.id) === sel.value) || null;
   updatePickupAddressCard();
+  renderCoSummary();
 }
 
 function updatePickupAddressCard() {
-  document.getElementById('pickup-addr-name').textContent = _selectedPickup ? _selectedPickup.name : '';
-  document.getElementById('pickup-addr-text').textContent = _selectedPickup ? _selectedPickup.address : '';
+  const card = document.getElementById('pickup-addr-card');
+  if (!_selectedPickup) { card.style.display = 'none'; return; }
+  card.style.display = 'flex';
+  document.getElementById('pickup-addr-name').textContent = _selectedPickup.name;
+  document.getElementById('pickup-addr-text').textContent = _selectedPickup.address;
 }
 
 async function renderAdminPickupList() {
@@ -2114,11 +2128,45 @@ async function deletePickupLocation(id) {
   toast('Pickup location removed', 'ok');
 }
 
-async function savePickupInstructions() {
-  const text = document.getElementById('set-pickup-instructions').value.trim();
-  const ok = await saveSettingsRow({ pickup_instructions: text });
+// Stored as a JSON array in the one pickup_instructions text column (same
+// approach as update_images elsewhere) rather than a separate table — it's
+// just a short list of lines, not records that need their own ids.
+async function renderAdminPickupInstructionsList() {
+  const el = document.getElementById('admin-pickup-instructions-list');
+  if (!el) return;
+  const s = await getSettings();
+  const lines = s.pickupInstructions || [];
+  if (lines.length === 0) {
+    el.innerHTML = '<p style="font-size:13px;color:var(--gy)">No instructions added yet.</p>';
+    return;
+  }
+  el.innerHTML = lines.map((line, i) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;background:var(--cr);border:1px solid var(--bd);border-radius:8px;padding:10px 14px;gap:10px">
+      <span style="font-size:14px">${line}</span>
+      <button class="ebtn" style="background:#fee2e2;color:#b91c1c;border-color:#fca5a5;flex-shrink:0" onclick="deletePickupInstruction(${i})">Delete</button>
+    </div>`).join('');
+}
+
+async function addPickupInstruction() {
+  const input = document.getElementById('pickup-new-instruction');
+  const text = input.value.trim();
+  if (!text) { toast('Please type an instruction first', 'err'); return; }
+  const s = await getSettings();
+  const lines = [...(s.pickupInstructions || []), text];
+  const ok = await saveSettingsRow({ pickup_instructions: JSON.stringify(lines) });
   if (!ok) return;
-  toast('Pickup instructions saved ✅', 'ok');
+  input.value = '';
+  renderAdminPickupInstructionsList();
+  toast('Instruction added ✅', 'ok');
+}
+
+async function deletePickupInstruction(index) {
+  const s = await getSettings();
+  const lines = (s.pickupInstructions || []).filter((_, i) => i !== index);
+  const ok = await saveSettingsRow({ pickup_instructions: JSON.stringify(lines) });
+  if (!ok) return;
+  renderAdminPickupInstructionsList();
+  toast('Instruction removed', 'ok');
 }
 
 // ══════════════════════════════════════════════
@@ -3476,7 +3524,7 @@ const DEFAULT_SETTINGS = {
   acctnum: '0123456789', acctname: 'Yo! Fruits Café', bankname: 'GTBank', payBank: true, payWa: true,
   deliveryFee: 500, adminPassword: ADMIN.password,
   updateText: '', updateImages: [], updateExpiresAt: null,
-  pickupInstructions: '',
+  pickupInstructions: [],
 };
 
 // Reads are silent (no error toast) and fall back to defaults, since every
@@ -3497,7 +3545,15 @@ async function getSettings() {
       updateText: data.update_text || '',
       updateImages: (() => { try { return JSON.parse(data.update_images || '[]'); } catch (e) { return []; } })(),
       updateExpiresAt: data.update_expires_at || null,
-      pickupInstructions: data.pickup_instructions || '',
+      // Defensive: older saves (before this became a list) may have stored a
+      // single plain string here instead of a JSON array — keep that text
+      // instead of losing it.
+      pickupInstructions: (() => {
+        const raw = data.pickup_instructions;
+        if (!raw) return [];
+        try { const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed : [String(raw)]; }
+        catch (e) { return [raw]; }
+      })(),
     };
   } catch (e) {
     console.error('Settings fetch failed, using defaults:', e);
@@ -3521,8 +3577,6 @@ async function loadPaymentSettings() {
   document.getElementById('set-deliveryfee').value = s.deliveryFee;
   document.getElementById('set-pay-bank').checked = s.payBank;
   document.getElementById('set-pay-wa').checked = s.payWa;
-  const pi = document.getElementById('set-pickup-instructions');
-  if (pi) pi.value = s.pickupInstructions;
 }
 
 async function savePaymentSettings() {
@@ -4148,7 +4202,7 @@ function showPanel(prefix, name, el) {
     else if (name === 'support') renderAdminSupport();
     else if (name === 'inquiries') renderInquiries();
     else if (name === 'updates') refreshUpdateStatus();
-    else if (name === 'settings') { renderAdminZoneList(); renderAdminPickupList(); }
+    else if (name === 'settings') { renderAdminZoneList(); renderAdminPickupList(); renderAdminPickupInstructionsList(); }
   } else if (prefix === 'c') {
     if (name === 'orders' || name === 'overview') refreshCustOrders();
     else if (name === 'support') refreshUserSupport();
