@@ -737,18 +737,48 @@ tr:last-child td{border-bottom:none;}
           <div class="fg2"><label>Full Name</label><input type="text" id="co-name" placeholder="Your full name"></div>
           <div class="fg2"><label>Phone Number</label><input type="tel" id="co-phone" placeholder="080XXXXXXXX"></div>
         </div>
-        <div class="fg2" id="co-zone-wrap" style="display:none">
-          <label>Your Area *</label>
-          <select id="co-zone" onchange="selectDeliveryZone()"></select>
-        </div>
-        <div class="fg2">
-          <label>Delivery Address</label>
-          <div class="addr-wrap">
-            <input type="text" id="co-addr" placeholder="Full delivery address in Lagos" oninput="onAddrInput()" autocomplete="off">
-            <div class="addr-suggest" id="co-addr-suggest" style="display:none"></div>
+
+        <div class="fg2" id="co-fulfil-wrap" style="display:none">
+          <label>How would you like to get your order?</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div id="fm-delivery" onclick="setFulfilMethod('delivery')" style="border:2px solid var(--g);background:var(--gp);border-radius:12px;padding:14px;cursor:pointer;text-align:center"><div style="font-size:22px;margin-bottom:6px">🚚</div><p style="font-size:13px;font-weight:600">Delivery</p></div>
+            <div id="fm-pickup" onclick="setFulfilMethod('pickup')" style="border:2px solid var(--bd);border-radius:12px;padding:14px;cursor:pointer;text-align:center"><div style="font-size:22px;margin-bottom:6px">🏪</div><p style="font-size:13px;font-weight:600">Pickup</p></div>
           </div>
-          <span class="addr-pin-link" id="addr-pin-link" onclick="arhvelPinFallback()">📍 Can't find your street? Pin it on a map</span>
         </div>
+
+        <div id="co-delivery-fields">
+          <div class="fg2" id="co-zone-wrap" style="display:none">
+            <label>Your Area *</label>
+            <select id="co-zone" onchange="selectDeliveryZone()"></select>
+          </div>
+          <div class="fg2">
+            <label>Delivery Address</label>
+            <div class="addr-wrap">
+              <input type="text" id="co-addr" placeholder="Full delivery address in Lagos" oninput="onAddrInput()" autocomplete="off">
+              <div class="addr-suggest" id="co-addr-suggest" style="display:none"></div>
+            </div>
+            <span class="addr-pin-link" id="addr-pin-link" onclick="arhvelPinFallback()">📍 Can't find your street? Pin it on a map</span>
+          </div>
+        </div>
+
+        <div id="co-pickup-fields" style="display:none">
+          <div class="fg2">
+            <label>Pickup Location *</label>
+            <select id="co-pickup-loc" onchange="selectPickupLocation()"></select>
+          </div>
+          <div style="background:var(--gp);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:13px;display:flex;gap:12px;align-items:flex-start">
+            <span style="font-size:20px">📍</span>
+            <div>
+              <p style="font-weight:600;font-size:14px;margin-bottom:3px" id="pickup-addr-name"></p>
+              <p style="font-size:13px;color:var(--gy)" id="pickup-addr-text"></p>
+            </div>
+          </div>
+          <div id="pickup-instructions-box" style="background:var(--cr);border:1px dashed var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:13px;display:none">
+            <p style="font-weight:600;font-size:13px;margin-bottom:6px">ℹ️ Pickup Instructions</p>
+            <p style="font-size:13px;color:var(--gy);line-height:1.6" id="pickup-instructions-text"></p>
+          </div>
+        </div>
+
         <div class="fg2"><label>Special Instructions</label><input type="text" id="co-note" placeholder="Any notes for us?"></div>
       </div>
       <div class="fsec">
@@ -1174,6 +1204,22 @@ tr:last-child td{border-bottom:none;}
           </div>
           <button class="btn" onclick="addDeliveryZone()">Add Area</button>
           <div id="admin-zone-list" style="display:flex;flex-direction:column;gap:8px;margin-top:16px"></div>
+        </div>
+
+        <div class="epsec" style="max-width:520px">
+          <h3>Pickup Locations</h3>
+          <p style="font-size:13px;color:var(--gy);margin-bottom:12px">Add a spot and customers can choose to pick up their order there instead of paying for delivery. Leave this empty and checkout works exactly as before, delivery only.</p>
+          <div class="frow">
+            <div class="fg2"><label>Location Name</label><input type="text" id="pickup-new-name" placeholder="e.g. Lekki Phase 1 Kitchen"></div>
+            <div class="fg2"><label>Full Address</label><input type="text" id="pickup-new-addr" placeholder="e.g. 12 Admiralty Way, Lekki Phase 1, Lagos"></div>
+          </div>
+          <button class="btn" onclick="addPickupLocation()">Add Pickup Location</button>
+          <div id="admin-pickup-list" style="display:flex;flex-direction:column;gap:8px;margin-top:16px"></div>
+          <div class="fg2" style="margin-top:18px">
+            <label>Pickup Instructions</label>
+            <textarea id="set-pickup-instructions" rows="3" placeholder="e.g. Your order will be ready within 1–2 hours of confirmation. Please bring your order reference when you arrive." style="width:100%;padding:11px 13px;border:2px solid var(--bd);border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical"></textarea>
+          </div>
+          <button class="btn" onclick="savePickupInstructions()">Save Pickup Instructions</button>
         </div>
         <div class="epsec" style="max-width:520px">
           <h3>Change Admin Password</h3>
@@ -1932,13 +1978,26 @@ function goCheckout() {
   renderCoSummary();
   go('checkout');
   populateDeliveryZones();
+  populatePickupLocations();
 }
 
 function renderCoSummary() {
+  const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+
+  if (_fulfilMethod === 'pickup') {
+    const total = subtotal;
+    document.getElementById('co-items').innerHTML = cart.map(i =>
+      `<div class="si"><span>${i.e} ${i.name} x${i.qty}</span><span>₦${(i.price * i.qty).toLocaleString()}</span></div>`
+    ).join('');
+    document.getElementById('co-subtotal').textContent = '₦' + subtotal.toLocaleString();
+    document.getElementById('co-deliveryfee').textContent = 'Pickup';
+    document.getElementById('co-total').textContent = '₦' + total.toLocaleString();
+    return;
+  }
+
   const wrap = document.getElementById('co-zone-wrap');
   const zoneRequired = wrap && wrap.style.display !== 'none';
   const zonePending = zoneRequired && !_selectedZone;
-  const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const fee = zonePending ? 0 : _deliveryFee;
   const total = subtotal + (cart.length > 0 ? fee : 0);
   document.getElementById('co-items').innerHTML = cart.map(i =>
@@ -1947,6 +2006,119 @@ function renderCoSummary() {
   document.getElementById('co-subtotal').textContent = '₦' + subtotal.toLocaleString();
   document.getElementById('co-deliveryfee').textContent = zonePending ? 'Select your area' : '₦' + (cart.length > 0 ? fee : 0).toLocaleString();
   document.getElementById('co-total').textContent = zonePending ? '—' : '₦' + total.toLocaleString();
+}
+
+// ══════════════════════════════════════════════
+// PICKUP vs DELIVERY
+// ══════════════════════════════════════════════
+let _fulfilMethod = 'delivery';
+let _pickupLocations = [];
+let _selectedPickup = null;
+
+function setFulfilMethod(mode) {
+  _fulfilMethod = mode;
+  const d = document.getElementById('fm-delivery'), p = document.getElementById('fm-pickup');
+  const df = document.getElementById('co-delivery-fields'), pf = document.getElementById('co-pickup-fields');
+  if (mode === 'delivery') {
+    d.style.border = '2px solid var(--g)'; d.style.background = 'var(--gp)';
+    p.style.border = '2px solid var(--bd)'; p.style.background = '';
+    df.style.display = 'block'; pf.style.display = 'none';
+  } else {
+    p.style.border = '2px solid var(--g)'; p.style.background = 'var(--gp)';
+    d.style.border = '2px solid var(--bd)'; d.style.background = '';
+    df.style.display = 'none'; pf.style.display = 'block';
+  }
+  renderCoSummary();
+}
+
+// Silent on failure, same as delivery zones — pickup is optional infrastructure.
+// If no pickup locations exist, the Delivery/Pickup toggle itself stays hidden
+// and checkout works exactly as it always has: delivery only.
+async function getPickupLocations() {
+  try {
+    const { data, error } = await _supabase.from('pickup_locations').select('*').order('name', { ascending: true });
+    if (error || !data) return [];
+    return data;
+  } catch (e) {
+    console.error('Pickup locations fetch failed:', e);
+    return [];
+  }
+}
+
+async function populatePickupLocations() {
+  const fulfilWrap = document.getElementById('co-fulfil-wrap');
+  const sel = document.getElementById('co-pickup-loc');
+  const locations = await getPickupLocations();
+  _pickupLocations = locations;
+  if (locations.length === 0) {
+    fulfilWrap.style.display = 'none';
+    setFulfilMethod('delivery');
+    return;
+  }
+  fulfilWrap.style.display = 'block';
+  sel.innerHTML = locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+  _selectedPickup = locations[0];
+  updatePickupAddressCard();
+  const s = await getSettings();
+  const box = document.getElementById('pickup-instructions-box');
+  if (s.pickupInstructions) {
+    document.getElementById('pickup-instructions-text').textContent = s.pickupInstructions;
+    box.style.display = 'block';
+  } else {
+    box.style.display = 'none';
+  }
+}
+
+function selectPickupLocation() {
+  const sel = document.getElementById('co-pickup-loc');
+  _selectedPickup = _pickupLocations.find(l => String(l.id) === sel.value) || null;
+  updatePickupAddressCard();
+}
+
+function updatePickupAddressCard() {
+  document.getElementById('pickup-addr-name').textContent = _selectedPickup ? _selectedPickup.name : '';
+  document.getElementById('pickup-addr-text').textContent = _selectedPickup ? _selectedPickup.address : '';
+}
+
+async function renderAdminPickupList() {
+  const el = document.getElementById('admin-pickup-list');
+  if (!el) return;
+  const locations = await getPickupLocations();
+  if (locations.length === 0) {
+    el.innerHTML = '<p style="font-size:13px;color:var(--gy)">No pickup locations added yet.</p>';
+    return;
+  }
+  el.innerHTML = locations.map(l => `
+    <div style="display:flex;justify-content:space-between;align-items:center;background:var(--cr);border:1px solid var(--bd);border-radius:8px;padding:10px 14px;gap:10px">
+      <span style="font-size:14px"><strong>${l.name}</strong><br><span style="color:var(--gy);font-size:12.5px">${l.address}</span></span>
+      <button class="ebtn" style="background:#fee2e2;color:#b91c1c;border-color:#fca5a5;flex-shrink:0" onclick="deletePickupLocation(${l.id})">Delete</button>
+    </div>`).join('');
+}
+
+async function addPickupLocation() {
+  const name = document.getElementById('pickup-new-name').value.trim();
+  const address = document.getElementById('pickup-new-addr').value.trim();
+  if (!name || !address) { toast('Please enter both a location name and an address', 'err'); return; }
+  const { error } = await sbCall(_supabase.from('pickup_locations').insert({ name, address }));
+  if (error) return;
+  document.getElementById('pickup-new-name').value = '';
+  document.getElementById('pickup-new-addr').value = '';
+  renderAdminPickupList();
+  toast('Pickup location added ✅', 'ok');
+}
+
+async function deletePickupLocation(id) {
+  const { error } = await sbCall(_supabase.from('pickup_locations').delete().eq('id', id));
+  if (error) return;
+  renderAdminPickupList();
+  toast('Pickup location removed', 'ok');
+}
+
+async function savePickupInstructions() {
+  const text = document.getElementById('set-pickup-instructions').value.trim();
+  const ok = await saveSettingsRow({ pickup_instructions: text });
+  if (!ok) return;
+  toast('Pickup instructions saved ✅', 'ok');
 }
 
 // ══════════════════════════════════════════════
@@ -2029,11 +2201,16 @@ function getCheckoutFields() {
 
 function validateCheckout() {
   const { name, phone, addr } = getCheckoutFields();
-  if (!name || !phone || !addr) { toast('Please fill in all delivery details', 'err'); return false; }
-  const zoneWrap = document.getElementById('co-zone-wrap');
-  if (zoneWrap && zoneWrap.style.display !== 'none' && !_selectedZone) {
-    toast('Please select your delivery area', 'err');
-    return false;
+  if (!name || !phone) { toast('Please fill in all delivery details', 'err'); return false; }
+  if (_fulfilMethod === 'pickup') {
+    if (!_selectedPickup) { toast('Please select a pickup location', 'err'); return false; }
+  } else {
+    if (!addr) { toast('Please fill in all delivery details', 'err'); return false; }
+    const zoneWrap = document.getElementById('co-zone-wrap');
+    if (zoneWrap && zoneWrap.style.display !== 'none' && !_selectedZone) {
+      toast('Please select your delivery area', 'err');
+      return false;
+    }
   }
   if (cart.length === 0) { toast('Your cart is empty!', 'err'); return false; }
   // Receipt is mandatory for both Bank Transfer and WhatsApp Order — payment
@@ -2048,17 +2225,20 @@ async function placeOrder() {
   const { name, phone, addr, note } = getCheckoutFields();
   const ref = '#YC' + Math.floor(100000 + Math.random() * 900000);
   const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  const total = subtotal + _deliveryFee;
+  const isPickup = _fulfilMethod === 'pickup';
+  const fee = isPickup ? 0 : _deliveryFee;
+  const total = subtotal + fee;
   const itemsStr = cart.map(i => `${i.name} x${i.qty}`).join(', ');
 
   const placeBtn = document.getElementById('place-order-btn');
   if (placeBtn) { placeBtn.disabled = true; placeBtn.textContent = 'Placing order…'; }
 
-  const zoneNote = _selectedZone ? `Delivery Area: ${_selectedZone.location_name} (₦${Number(_selectedZone.fee).toLocaleString()})` : '';
+  const effectiveAddr = isPickup ? `Pickup — ${_selectedPickup.name}, ${_selectedPickup.address}` : addr;
+  const zoneNote = isPickup ? `Fulfillment: Pickup (${_selectedPickup.name})` : (_selectedZone ? `Delivery Area: ${_selectedZone.location_name} (₦${Number(_selectedZone.fee).toLocaleString()})` : '');
   const pinNote = _arhvelPinLat ? `Pinned Location: ${_arhvelPinLat}, ${_arhvelPinLon}` : '';
   const order = {
     id: ref, customer_email: cu?.email || '', customer_name: name,
-    phone, address: addr, note: [note, zoneNote, pinNote].filter(Boolean).join(' — ') || '—', items: itemsStr,
+    phone, address: effectiveAddr, note: [note, zoneNote, pinNote].filter(Boolean).join(' — ') || '—', items: itemsStr,
     total: '₦' + total.toLocaleString(), status: 'pending',
     receipt: true, receipt_url: _pendingReceiptDataUrl, created_at: new Date().toISOString()
   };
@@ -2089,18 +2269,21 @@ async function waOrder() {
   const { name, phone, addr, note } = getCheckoutFields();
   const ref = '#YC' + Math.floor(100000 + Math.random() * 900000);
   const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  const total = subtotal + _deliveryFee;
+  const isPickup = _fulfilMethod === 'pickup';
+  const fee = isPickup ? 0 : _deliveryFee;
+  const total = subtotal + fee;
   const itemsStr = cart.map(i => `${i.name} x${i.qty}`).join(', ');
   const hasPaid = !!_pendingReceiptDataUrl;
 
   const waBtn = document.getElementById('wa-order-btn');
   if (waBtn) waBtn.disabled = true;
 
-  const zoneNote = _selectedZone ? `Delivery Area: ${_selectedZone.location_name} (₦${Number(_selectedZone.fee).toLocaleString()})` : '';
+  const effectiveAddr = isPickup ? `Pickup — ${_selectedPickup.name}, ${_selectedPickup.address}` : addr;
+  const zoneNote = isPickup ? `Fulfillment: Pickup (${_selectedPickup.name})` : (_selectedZone ? `Delivery Area: ${_selectedZone.location_name} (₦${Number(_selectedZone.fee).toLocaleString()})` : '');
   const pinNote = _arhvelPinLat ? `Pinned Location: ${_arhvelPinLat}, ${_arhvelPinLon}` : '';
   const order = {
     id: ref, customer_email: cu?.email || '', customer_name: name,
-    phone, address: addr, note: [note, zoneNote, pinNote, 'Ordered via WhatsApp'].filter(Boolean).join(' — '), items: itemsStr,
+    phone, address: effectiveAddr, note: [note, zoneNote, pinNote, 'Ordered via WhatsApp'].filter(Boolean).join(' — '), items: itemsStr,
     total: '₦' + total.toLocaleString(), status: 'pending',
     receipt: hasPaid, receipt_url: _pendingReceiptDataUrl, created_at: new Date().toISOString()
   };
@@ -2115,11 +2298,12 @@ async function waOrder() {
   const paymentLine = hasPaid
     ? '✅ *Payment receipt already uploaded, please confirm and process!*'
     : '⚠️ *Customer has NOT made payment yet — please share account details and confirm once paid.*';
+  const feeLine = isPickup ? '🏪 *Pickup — no delivery fee*' : `🚚 *Delivery Fee: ₦${fee.toLocaleString()}*`;
   // ref contains a literal "#" (e.g. #YC123456) which, left unencoded, the browser reads as a
   // URL fragment — silently truncating the entire message at that point. Build the message with
   // real newlines and run the whole thing through encodeURIComponent once, instead of manually
   // encoding just newlines as %0A, so any special character in any field (ref, address, notes) is safe.
-  const waMsg = `🍃 *NEW ORDER ${ref}*\n\n👤 *Customer:* ${name}\n📞 *Phone:* ${phone}\n📍 *Address:* ${addr}${_selectedZone ? `\n🗺️ *Area:* ${_selectedZone.location_name}` : ''}\n${note ? `📝 *Note:* ${note}\n` : ''}\n🛒 *Items:*\n${waItems}\n\n🚚 *Delivery Fee: ₦${_deliveryFee.toLocaleString()}*\n💰 *Total: ₦${total.toLocaleString()}*\n\n${paymentLine}`;
+  const waMsg = `🍃 *NEW ORDER ${ref}*\n\n👤 *Customer:* ${name}\n📞 *Phone:* ${phone}\n📍 *Address:* ${effectiveAddr}${!isPickup && _selectedZone ? `\n🗺️ *Area:* ${_selectedZone.location_name}` : ''}\n${note ? `📝 *Note:* ${note}\n` : ''}\n🛒 *Items:*\n${waItems}\n\n${feeLine}\n💰 *Total: ₦${total.toLocaleString()}*\n\n${paymentLine}`;
   const waUrl = `https://wa.me/2348029937287?text=${encodeURIComponent(waMsg)}`;
   if (waWin) waWin.location.href = waUrl;
   else window.open(waUrl, '_blank'); // fallback in case the initial synchronous open was itself blocked
@@ -3292,6 +3476,7 @@ const DEFAULT_SETTINGS = {
   acctnum: '0123456789', acctname: 'Yo! Fruits Café', bankname: 'GTBank', payBank: true, payWa: true,
   deliveryFee: 500, adminPassword: ADMIN.password,
   updateText: '', updateImages: [], updateExpiresAt: null,
+  pickupInstructions: '',
 };
 
 // Reads are silent (no error toast) and fall back to defaults, since every
@@ -3312,6 +3497,7 @@ async function getSettings() {
       updateText: data.update_text || '',
       updateImages: (() => { try { return JSON.parse(data.update_images || '[]'); } catch (e) { return []; } })(),
       updateExpiresAt: data.update_expires_at || null,
+      pickupInstructions: data.pickup_instructions || '',
     };
   } catch (e) {
     console.error('Settings fetch failed, using defaults:', e);
@@ -3335,6 +3521,8 @@ async function loadPaymentSettings() {
   document.getElementById('set-deliveryfee').value = s.deliveryFee;
   document.getElementById('set-pay-bank').checked = s.payBank;
   document.getElementById('set-pay-wa').checked = s.payWa;
+  const pi = document.getElementById('set-pickup-instructions');
+  if (pi) pi.value = s.pickupInstructions;
 }
 
 async function savePaymentSettings() {
@@ -3960,7 +4148,7 @@ function showPanel(prefix, name, el) {
     else if (name === 'support') renderAdminSupport();
     else if (name === 'inquiries') renderInquiries();
     else if (name === 'updates') refreshUpdateStatus();
-    else if (name === 'settings') renderAdminZoneList();
+    else if (name === 'settings') { renderAdminZoneList(); renderAdminPickupList(); }
   } else if (prefix === 'c') {
     if (name === 'orders' || name === 'overview') refreshCustOrders();
     else if (name === 'support') refreshUserSupport();
